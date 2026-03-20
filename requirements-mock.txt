@@ -1,0 +1,6 @@
+# 无树莓派 / 无 Linux 环境下的测试依赖（仅 Flask）
+# 使用: pip install -r requirements-mock.txt
+# 运行: python main.py
+# 通过浏览器 http://localhost:5000 玩贪吃蛇，查看像素预览
+
+flask>=3.0.0

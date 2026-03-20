@@ -1,0 +1,5 @@
+flask>=3.0.0
+pyPS4Controller>=1.2.0; sys_platform == "linux"
+adafruit-circuitpython-neopixel>=6.3.0; sys_platform == "linux"
+adafruit-blinka>=8.0.0; sys_platform == "linux"
+RPi.GPIO>=0.7.0; sys_platform == "linux"

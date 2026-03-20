@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>像素墙控制器</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            touch-action: none;
+        }
+        .preview-box {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #0d0d0d;
+            border-radius: 12px;
+            border: 3px solid #00ccff;
+            box-shadow: 0 0 30px rgba(0,204,255,0.2);
+        }
+        .preview-title {
+            font-size: 16px;
+            color: #00ccff;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .preview-status {
+            font-size: 12px;
+            color: #888;
+            margin-top: 8px;
+            text-align: center;
+        }
+        .preview-status.error { color: #ff4444; }
+        .preview-status.ok { color: #44ff44; }
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+        }
+        #pixelCanvas {
+            display: block;
+            background: #000;
+            border-radius: 4px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            border-left: 30px solid #333;
+            border-bottom: 30px solid #333;
+        }
+        .axis-label {
+            position: absolute;
+            color: #00ccff;
+            font-size: 10px;
+            font-family: monospace;
+        }
+        .x-axis-label {
+            bottom: 8px;
+            transform: translateX(-50%);
+        }
+        .y-axis-label {
+            left: 8px;
+            transform: translateY(-50%);
+        }
+        .d-pad {
+            display: grid;
+            grid-template-columns: 80px 80px 80px;
+            grid-template-rows: 80px 80px 80px;
+            gap: 10px;
+            margin-bottom: 50px;
+        }
+        .btn {
+            background-color: #333;
+            border: 2px solid #555;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active {
+            background-color: #00ffcc;
+            color: black;
+        }
+        .btn-up { grid-column: 2; grid-row: 1; }
+        .btn-left { grid-column: 1; grid-row: 2; }
+        .btn-right { grid-column: 3; grid-row: 2; }
+        .btn-down { grid-column: 2; grid-row: 3; }
+        
+        .actions {
+            display: flex;
+            gap: 20px;
+        }
+        .action-btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 25px;
+            border: none;
+            background-color: #ff0055;
+            color: white;
+        }
+        .mode-btn { background-color: #00ccff; color: black;}
+    </style>
+</head>
+<body>
+    <div class="preview-box">
+        <div class="preview-title">像素墙预览 · 与实体 LED 同步</div>
+        <div class="canvas-container" id="canvasContainer">
+            <canvas id="pixelCanvas" width="368" height="144"></canvas>
+        </div>
+        <div class="preview-status" id="previewStatus">连接中...</div>
+    </div>
+    <div class="d-pad">
+        <div class="btn btn-up" role="button" tabindex="0" onpointerdown="send('UP'); event.preventDefault()">▲</div>
+        <div class="btn btn-left" role="button" tabindex="0" onpointerdown="send('LEFT'); event.preventDefault()">◀</div>
+        <div class="btn btn-right" role="button" tabindex="0" onpointerdown="send('RIGHT'); event.preventDefault()">▶</div>
+        <div class="btn btn-down" role="button" tabindex="0" onpointerdown="send('DOWN'); event.preventDefault()">▼</div>
+    </div>
+    
+    <div class="actions">
+        <button class="action-btn mode-btn" onclick="send('SWITCH_MODE')">切换模式</button>
+        <button class="action-btn" onclick="send('RESET')">重置游戏</button>
+    </div>
+
+    <script>
+        function send(command) {
+            fetch('/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ btn: command })
+            }).catch(err => console.error(err));
+            if (navigator.vibrate) navigator.vibrate(50);
+        }
+        document.querySelectorAll('.btn').forEach(el => {
+            el.addEventListener('contextmenu', e => e.preventDefault());
+        });
+        document.addEventListener('keydown', e => {
+            const map = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
+            if (map[e.key]) { e.preventDefault(); send(map[e.key]); }
+        });
+
+        const canvas = document.getElementById('pixelCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('previewStatus');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const CELL = 16;
+        const GRID_WIDTH = 23;
+        const GRID_HEIGHT = 9;
+
+        // 创建坐标轴标签
+        function createAxisLabels() {
+            // 清除旧标签
+            const oldLabels = canvasContainer.querySelectorAll('.axis-label');
+            oldLabels.forEach(label => label.remove());
+
+            // X轴标签 (1-23)
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                const label = document.createElement('div');
+                label.className = 'axis-label x-axis-label';
+                label.textContent = x + 1;
+                label.style.left = (30 + x * CELL + CELL / 2) + 'px';
+                canvasContainer.appendChild(label);
+            }
+
+            // Y轴标签 (1-9)
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                const label = document.createElement('div');
+                label.className = 'axis-label y-axis-label';
+                label.textContent = y + 1;
+                label.style.top = (y * CELL + CELL / 2) + 'px';
+                canvasContainer.appendChild(label);
+            }
+        }
+
+        // 绘制格子线
+        function drawGridLines() {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+
+            // 垂直线
+            for (let x = 0; x <= GRID_WIDTH; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * CELL, 0);
+                ctx.lineTo(x * CELL, GRID_HEIGHT * CELL);
+                ctx.stroke();
+            }
+
+            // 水平线
+            for (let y = 0; y <= GRID_HEIGHT; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * CELL);
+                ctx.lineTo(GRID_WIDTH * CELL, y * CELL);
+                ctx.stroke();
+            }
+        }
+
+        function updatePreview() {
+            fetch('/api/display')
+                .then(r => r.json())
+                .then(data => {
+                    statusEl.textContent = '已连接';
+                    statusEl.className = 'preview-status ok';
+
+                    // 绘制像素
+                    for (let y = 0; y < GRID_HEIGHT; y++) {
+                        for (let x = 0; x < GRID_WIDTH; x++) {
+                            const [r, g, b] = data[y][x] || [0, 0, 0];
+                            ctx.fillStyle = `rgb(${r},${g},${b})`;
+                            ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+                        }
+                    }
+
+                    // 绘制格子线
+                    drawGridLines();
+                })
+                .catch(() => {
+                    statusEl.textContent = '无法连接，请确认已运行 python main.py';
+                    statusEl.className = 'preview-status error';
+                });
+        }
+
+        // 初始化
+        createAxisLabels();
+        updatePreview();
+        setInterval(updatePreview, 100);
+    </script>
+</body>
+</html>
